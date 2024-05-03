@@ -5,23 +5,15 @@ Part 1: State & Parameter estimation with F-16 flight data
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
-from kalman import KalmanFilter, train_data, validation_data
+from read_data import train_data
+from kalman import KalmanFilter
 
 np.random.seed(0)
 
-# load training data
-data = train_data()
+data = train_data()  # load training data
 
-# check observability
-
-
-
-# do Kalman filtering
-
-KF = KalmanFilter(dt=0.01, data=data)
-KF.prove_convergence()
-KF.IEKF()
-KF.plot()
-
-# reconstruct α_true
+""" Apply Kalman Filter. For further details into the implementation, please check kalman.py """
+KF = KalmanFilter(dt=0.01, data=data, n_states=4)  # initialize object
+KF.prove_convergence()  # check rank of observability matrix
+KF.IEKF()  # perform Iterative Extended Kalman Filter
+KF.plot()  # plot results

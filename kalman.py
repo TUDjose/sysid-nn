@@ -1,61 +1,54 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import pandas as pd
 import control.matlab as cm
-
-
-def train_data(filename='F16traindata_CMabV_2024.csv'):
-    df = pd.read_csv(filename, header=None)
-    Cm = df.iloc[:, 0].to_numpy()
-    Zk = df.iloc[:, 1:4].to_numpy()
-    Uk = df.iloc[:, 4:7].to_numpy()
-    return Cm, Zk, Uk
-
-def validation_data(filename='F16validationdata_2024.csv'):
-    df = pd.read_csv(filename, header=None)
-    Cm_val = df.iloc[:, 0].to_numpy()
-    alpha_val = df.iloc[:, 1].to_numpy()
-    beta_val = df.iloc[:, 2].to_numpy()
-    return Cm_val, alpha_val, beta_val
+import sympy
+from tqdm import tqdm
+plt.rcParams['text.usetex'] = True
 
 
 class KalmanFilter:
-    MAX_ITER = 100
-    TOLERANCE = 1e-10
+    """
+    This class contains all the necessary methods to perform an Iterative Extended Kalman Filter (IEKF) on the provided measurement data.
+        :param dt: time step
+        :param data: tuple containing the data (Cm, Zk, Uk)
+        :param n_states: number of states in system
+    """
 
-    def __init__(self, dt, data):
+    def __init__(self, dt, data, n_states):
         self.Cm, self.Zk, self.Uk = data
         self.dt = dt
         self.N = len(self.Uk)
 
-        self.states = 4
-        self.inputs = 3
-        self.meas = 3
+        self.states = n_states
+        self.inputs = self.Uk.shape[1]
+        self.meas = self.Zk.shape[1]
+
+        self.MAX_ITER = 100     # maximum number of iterations for IEKF
+        self.EPSILON = 1e-10    # convergence criterion for iteration loop
 
         self.initialize_kf_params()
 
     def initialize_kf_params(self):
-        self.E_x_0 = np.array([self.Zk[0, 2], 0.5, 0.5, 0.5])      # TODO: check this
-        self.P_0_0 = np.eye(self.states) * 0.1        # TODO: check this
+        self.E_x_0 = np.array([self.Zk[0, 2], 0.5, 0.5, 0.5])       # initial state estimate TODO: check this
+        self.P_0_0 = np.eye(self.states) * 0.1      # initial state prediction covariance matrix TODO: check this
 
-        self.Ew = np.zeros(4)
+        # system noise parameters
         self.sigma_w = np.array([1e-3, 1e-3, 1e-3, 0])
         self.Q = np.diagflat(np.power(self.sigma_w, 2))
 
-        self.Ev = np.zeros(3)
+        # sensor noise parameters
         self.sigma_v = np.array([1.5e-3, 1.5e-3, 1e0])
         self.R = np.diagflat(np.power(self.sigma_v, 2))
 
-        self.G = np.eye(self.states)
+        self.G = np.eye(self.states)        # system noise matrix
         self.Xk1k1 = np.zeros([self.states, self.N])
         self.Pk1k1 = np.zeros([self.states, self.states, self.N])
-        self.Z_pred = np.zeros([self.meas, self.N])
-        self.STD_xcor = np.zeros([self.states, self.N])
-        self.STD_z = np.zeros([self.meas, self.N])
-        self.IEKFcntr = np.zeros([self.N, 1])
+        self.Z_pred = np.zeros([self.meas, self.N])     # predicted measurement
+
 
     @staticmethod
     def rk4(fn, xin, uin, t):
+        """Runge-Kutta method for solving one-step-ahead prediction of state estimate"""
         a = t[0]
         b = t[1]
         w = xin
@@ -74,9 +67,11 @@ class KalmanFilter:
 
         return t, w
     def f(self, t, X, U):
+        """(Trivial) System equations: xdot = f(x, u, t)"""
         return np.concatenate((U, [0]))
 
     def h(self, t, X, U):
+        """(Non-trivial) Output equations: z = h(x, u, t)"""
         u, v, w, Caup = X
         h = np.array([np.arctan(w/u) * (1 + Caup),
                        np.arctan(v / np.sqrt(u**2 + w ** 2)),
@@ -84,97 +79,166 @@ class KalmanFilter:
         return h
 
     def Fx(self, t, X, U):
+        """Jacobian matrix of f(x, u, t) w.r.t. x"""
         return np.zeros((4, 4))
 
     def Hx(self, t, X, U):
-        u, v, w, C = X
+        """Jacobian matrix of h(x, u, t) w.r.t. x"""
+        u, v, w, Caup = X
         Vtot = u**2 + v**2 + w**2
         Hx = np.array([
-            [-w*(1+C)/(u**2 + w**2), 0, u*(1+C)/(u**2 + w**2), np.arctan(w/u)],
+            [-w*(1+Caup)/(u**2 + w**2), 0, u*(1+Caup)/(u**2 + w**2), np.arctan(w/u)],
             [-u*v/(np.sqrt(u**2 + w**2)*Vtot), np.sqrt(u**2 + w**2)/Vtot, -v*w/(np.sqrt(u**2 + w**2)*Vtot), 0],
             [u/np.sqrt(Vtot), v/np.sqrt(Vtot), w/np.sqrt(Vtot), 0]])
         return Hx
 
     def prove_convergence(self):
-        print("Observability matrix has full rank, hence system is observable and IEKF will converge.")
+        """prove convergence of the kalman filtering. This is done by calculating the observability matrix and checking that its rank is
+        equal to the number of states."""
+        # check observability
+        u = sympy.symbols('u')
+        v = sympy.symbols('v')
+        w = sympy.symbols('w')
+        Caup = sympy.symbols('Caup')
+
+        udot = sympy.symbols('udot')
+        vdot = sympy.symbols('vdot')
+        wdot = sympy.symbols('wdot')
+
+        x = sympy.Matrix([u, v, w, Caup])
+        f = sympy.Matrix([udot, vdot, wdot, 0])
+        h = sympy.Matrix([sympy.atan(w/u) * (1 + Caup), sympy.atan(v / sympy.sqrt(u**2 + w ** 2)), sympy.sqrt(u**2 + v**2 + w**2)])
+
+        # calculate observability matrix from the Lie derivatives of the system and output equations
+        O = sympy.Matrix()
+        Hx = h.jacobian(x)
+        O = O.col_join(Hx)
+        Lfh = Hx @ f
+        O = O.col_join(Lfh.jacobian(x))
+        L2fh = Lfh.jacobian(x) @ f
+        O = O.col_join(L2fh.jacobian(x))
+        Onums = O.subs({'u': 100, 'v': 10, 'w': 10, 'Caup': 1})
+
+        if Onums.rank() == self.states:
+            print("Observability matrix has full rank, hence system is observable and IEKF will converge.")
+        else:
+            print("Observability matrix does not have full rank, hence system is not observable and IEKF will not converge.")
 
     def IEKF(self):
+        """Implementation of the Iterative Extended Kalman Filter"""
         x_k1_k1 = self.E_x_0
         P_k1_k1 = self.P_0_0
 
         tk = 0
         tk1 = self.dt
+        with tqdm(total=self.N) as pbar:
+            for k in range(self.N):
+                # 1. one step ahead prediction
+                _, x_k1_k = KalmanFilter.rk4(self.f, x_k1_k1, self.Uk[k], [tk, tk1])
 
-        for k in range(self.N):
-            # 1. one step ahead prediction
-            _, x_k1_k = KalmanFilter.rk4(self.f, x_k1_k1, self.Uk[k], [tk, tk1])
+                # 2. calculate Fx
+                Fx = self.Fx(0, x_k1_k, self.Uk[k])
 
-            # 2. calculate Fx
-            Fx = self.Fx(0, x_k1_k, self.Uk[k])
+                # 3. discretize system for phi and gamma matrices
+                ssB = cm.ss(Fx, self.G, np.eye(4), 0)
+                Phi = cm.c2d(ssB, self.dt).A
+                Gamma = cm.c2d(ssB, self.dt).B
 
-            # 3. discretize for phi and gamma
-            ssB = cm.ss(Fx, self.G, np.eye(4), 0)
-            Phi = cm.c2d(ssB, self.dt).A
-            Gamma = cm.c2d(ssB, self.dt).B
+                # 4. calculate P_k1_k
+                P_k1_k =  Phi @ P_k1_k1 @ Phi.T + Gamma @ self.Q @ Gamma.T
 
-            # 4. calculate P_k1_k
-            P_k1_k =  Phi @ P_k1_k1 @ Phi.T + Gamma @ self.Q @ Gamma.T
+                # IEKF loop
+                eta_i = x_k1_k
+                err = 2*self.EPSILON
+                iter = 0
 
-            # IEKF loop
-            eta_i = x_k1_k
-            err = 2*self.TOLERANCE
-            iter = 0
+                while err > self.EPSILON:
+                    if iter > self.MAX_ITER:
+                        print("Terminating IEKF - exceeded maximum iterations")
+                        break
 
-            while err > self.TOLERANCE:
-                if iter > self.MAX_ITER:
-                    print("Terminating IEKF - exceeded maximum iterations")
-                    break
+                    iter += 1
+                    eta1 = eta_i
 
-                iter += 1
-                eta1 = eta_i
+                    # 5. recalculate Hx
+                    Hx = self.Hx(0, eta1, self.Uk[k])
+                    z_k1_k = self.h(0, eta1, self.Uk[k])
+                    # std_z = np.sqrt(np.diag(Pz))
 
-                # 5. recalculate Hx
-                Hx = self.Hx(0, eta1, self.Uk[k])
-                z_k1_k = self.h(0, eta1, self.Uk[k])
-                Pz = Hx @ P_k1_k @ Hx.T + self.R
-                std_z = np.sqrt(np.diag(Pz))
+                    # 6. calculate Kk1
+                    K_k1 = P_k1_k @ Hx.T @ np.linalg.inv(Hx @ P_k1_k @ Hx.T + self.R)
 
-                # 6. calculate Kk1
-                K_k1 = P_k1_k @ Hx.T @ np.linalg.inv(Pz)
+                    # 7. update x_k1_k1
+                    eta_i = x_k1_k + K_k1 @ (self.Zk[k] - z_k1_k - Hx @ (x_k1_k - eta1))
+                    eta_i = np.ravel(eta_i)
+                    err = np.linalg.norm(eta_i - eta1) / np.linalg.norm(eta1)
 
-                # 7. update x_k1_k1
-                temp = K_k1 @ (self.Zk[k] - z_k1_k - Hx @ (x_k1_k - eta1))
+                x_k1_k1 = eta_i
 
-                eta_i = x_k1_k + K_k1 @ (self.Zk[k] - z_k1_k - Hx @ (x_k1_k - eta1))
-                eta_i = np.ravel(eta_i)
-                err = np.linalg.norm(eta_i - eta1) / np.linalg.norm(eta1)
+                # 8. update P_k1_k1
+                P_k1_k1 = (np.eye(self.states) - K_k1 @ Hx) @ P_k1_k @ (np.eye(self.states) - K_k1 @ Hx).T + K_k1 @ self.R @ K_k1.T
 
-            self.IEKFcntr[k] = iter
-            x_k1_k1 = eta_i
+                # store results
+                self.Xk1k1[:, k] = x_k1_k1
+                self.Pk1k1[:, :, k] = P_k1_k1
+                self.Z_pred[:, k] = z_k1_k
+                pbar.update(1)
 
-            # 8. update P_k1_k1
-            P_k1_k1 = (np.eye(self.states) - K_k1 @ Hx) @ P_k1_k @ (np.eye(self.states) - K_k1 @ Hx).T + K_k1 @ self.R @ K_k1.T
-            std_x_cor = np.sqrt(np.diag(P_k1_k1))
-
-            self.Xk1k1[:, k] = x_k1_k1
-            self.Pk1k1[:, :, k] = P_k1_k1
-            self.Z_pred[:, k] = z_k1_k
-            self.STD_xcor[:, k] = std_x_cor
-            self.STD_z[:, k] = std_z
+        np.savetxt('data/output.csv', np.hstack([self.Cm.reshape(-1, 1), self.Z_pred.T]), delimiter=',')
+        print("State estimation complete. The final value of C_alpha_up is: ", self.Xk1k1[3, -1])
 
     def alpha_reconstruction(self):
-        alpha_bias_corr = self.Z_pred[0, :]
-        alpha_bias_corr /= (1 + self.Xk1k1[3, :])
-        return alpha_bias_corr
+        """Reconstruction of alpha_true using the estimated C_alpha_up state."""
+        alpha_recon = self.Z_pred[0, :].copy()
+        alpha_recon /= (1 + self.Xk1k1[3, :])
+        return alpha_recon
 
 
-    def plot(self):
+    def plot(self, show=False):
+        T = np.linspace(0, 100, 10001)
+
+        labels = [r'$\alpha$ [rad]', r'$\beta$ [rad]', r'$V$ [m/s]']
         fig, ax = plt.subplots(3,1, figsize=(7, 8))
         for i in range(3):
-            ax[i].plot(self.Zk[:, i], label='True')
-            ax[i].plot(self.Z_pred[i, :], label='Predicted')
+            ax[i].plot(T, self.Zk[:, i], label='Measurement', lw=1.5)
+            ax[i].plot(T, self.Z_pred[i, :], label='Predicted', lw=1.3, c='r')
             ax[i].legend()
             ax[i].grid()
-        ax[0].plot(self.alpha_reconstruction(), label='Bias corrected')
+            ax[i].set_xlabel('Time [s]')
+            ax[i].set_ylabel(fr'{labels[i]}')
         plt.tight_layout()
-        plt.show(dpi=300)
+        plt.savefig('plots/IEKF.png', dpi=300)
+        if show: plt.show()
+
+        plt.figure(figsize=(7, 3))
+        plt.plot(T, self.Zk[:, 0], label='Measurement', lw=1.5)
+        plt.plot(T, self.Z_pred[0, :], label='Predicted', lw=1.3, c='r')
+        plt.plot(T, self.alpha_reconstruction(), label=r'$\alpha_{true}$ Reconstruction', lw=1.3, c='g')
+        plt.grid()
+        plt.legend()
+        plt.xlabel('Time [s]')
+        plt.ylabel(r'$\alpha$ [rad]')
+        plt.tight_layout()
+        plt.savefig('plots/a_reconstruct.png', dpi=300)
+        if show: plt.show()
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(self.Zk[:, 0], self.Zk[:, 1], label='Measured', lw=0.8)
+        plt.plot(self.Z_pred[0, :], self.Z_pred[1, :], label='Predicted', lw=1, c='r')
+        plt.plot(self.alpha_reconstruction(), self.Z_pred[1, :], label=r'$\alpha_{true}$ Reconstruction', lw=1, c='g')
+        plt.legend()
+        plt.grid()
+        plt.xlabel(r'$\alpha$ [rad]')
+        plt.ylabel(r'$\beta$ [rad]')
+        plt.tight_layout()
+        plt.savefig('plots/a_b.png', dpi=300)
+        if show: plt.show()
+
+        plt.figure(figsize=(7, 3))
+        plt.plot(self.Xk1k1[3, :], lw=1)
+        plt.grid()
+        plt.xlabel('Iteration [-]')
+        plt.ylabel(r'$C_{\alpha_{up}}$ (estimated) [-]')
+        plt.tight_layout()
+        plt.savefig('plots/Caup.png', dpi=300)
+        if show: plt.show()

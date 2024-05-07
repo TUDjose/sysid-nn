@@ -8,11 +8,22 @@ from read_data import treat_data
 import matplotlib.pyplot as plt
 
 
+
+class Linear(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(Linear, self).__init__()
+        self.weight = nn.Parameter(torch.randn(out_features, in_features))
+        self.bias = nn.Parameter(torch.randn(out_features))
+
+    def forward(self, x):
+        return torch.matmul(x, self.weight.t()) + self.bias
+
+
 class FeedForwardNet(nn.Module):
-    def __init__(self, in_features, hidden_dim, out_features, ):
+    def __init__(self, in_features, hidden_dim, out_features):
         super(FeedForwardNet, self).__init__()
-        self.layer1 = nn.Linear(in_features, hidden_dim)
-        self.layer2 = nn.Linear(hidden_dim, out_features)
+        self.layer1 = Linear(in_features, hidden_dim)
+        self.layer2 = Linear(hidden_dim, out_features)
         self.activation = torch.tanh
 
     def forward(self, x):
@@ -60,6 +71,7 @@ def train(X, Y, num_epochs, lr, hidden_dim):
 
         # Print progress
         if (epoch + 1) % 100 == 0:
+            print(model.layer1.bias.detach().numpy())
             print(f'Epoch [{epoch + 1}/{num_epochs}], Train Loss: {loss.item():.6f}, Val Loss: {val_loss.item():.6f}')
 
     test_data = scaler.transform(X)
@@ -109,7 +121,6 @@ def train_lm(X, Y, num_epochs, mu, hidden_dim):
             model.zero_grad()
             outputs = model(X_train_tensor)
             loss = criterion(outputs, y_train_tensor)
-            # loss.backward()
             losses.append(loss.item())
 
             E = 0.5 * (y_train_tensor - outputs).pow(2)
@@ -123,17 +134,10 @@ def train_lm(X, Y, num_epochs, mu, hidden_dim):
             for i, p in enumerate(model.parameters()):
                 p.data -= deltas[i].reshape(p.shape)
 
-            val_loss = torch.tensor([1])
-            # if (iteration + 1) % 10 == 0:
-            #     model.eval()
-            #     with torch.no_grad():
-            #         val_outputs = model(X_val_tensor)
-            #         val_loss = criterion(val_outputs, y_val_tensor)
-            #         if val_loss > val_loss_prev:
-            #             mu *= 1.05
-            #         elif val_loss < val_loss_prev:
-            #             mu /= 1.05
-            #         val_loss_prev = val_loss
+            model.eval()
+            with torch.no_grad():
+                val_outputs = model(X_val_tensor)
+                val_loss = criterion(val_outputs, y_val_tensor)
 
             if (iteration + 1) % 100 == 0:
                 print(f'Epoch [{iteration + 1}/{num_epochs}], Train Loss: {loss.item():.6f}, Val Loss: {val_loss.item():.6f}, mu: {mu:.6f}')
@@ -193,7 +197,7 @@ ols_data = np.loadtxt('data/output.csv', delimiter=',')  # load full reconstruct
 Y, X = ols_data[:, 0], ols_data[:, 1:]
 Y, X = treat_data((Y, X))
 
-predictions, losses,  test_data = train_lm(X, Y, 10000, 0.01, 15)
+predictions, losses,  test_data = train(X, Y, 10000, 0.01, 15)
 
 plt.figure(figsize=(12, 3))
 plt.plot(Y, label='True')

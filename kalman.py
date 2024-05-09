@@ -29,8 +29,8 @@ class KalmanFilter:
         self.initialize_kf_params()
 
     def initialize_kf_params(self):
-        self.E_x_0 = np.array([self.Zk[0, 2], 0.5, 0.5, 0.5])       # initial state estimate TODO: check this
-        self.P_0_0 = np.eye(self.states) * 0.1      # initial state prediction covariance matrix TODO: check this
+        self.E_x_0 = np.array([self.Zk[0, 2], 0.1, 0.1, 0.3])       # initial state estimate
+        self.P_0_0 = np.eye(self.states)      # initial state prediction covariance matrix
 
         # system noise parameters
         self.sigma_w = np.array([1e-3, 1e-3, 1e-3, 0])
@@ -67,11 +67,11 @@ class KalmanFilter:
 
         return t, w
     def f(self, t, X, U):
-        """(Trivial) System equations: xdot = f(x, u, t)"""
+        """(Trivial) System equations: xdot = f(x, u, t) : P1.2"""
         return np.concatenate((U, [0]))
 
     def h(self, t, X, U):
-        """(Non-trivial) Output equations: z = h(x, u, t)"""
+        """(Non-trivial) Output equations: z = h(x, u, t) : P1.2"""
         u, v, w, Caup = X
         h = np.array([np.arctan(w/u) * (1 + Caup),
                        np.arctan(v / np.sqrt(u**2 + w ** 2)),
@@ -94,7 +94,7 @@ class KalmanFilter:
 
     def prove_convergence(self):
         """prove convergence of the kalman filtering. This is done by calculating the observability matrix and checking that its rank is
-        equal to the number of states."""
+        equal to the number of states : P1.4"""
         # check observability
         u = sympy.symbols('u')
         v = sympy.symbols('v')
@@ -125,7 +125,7 @@ class KalmanFilter:
             print("Observability matrix does not have full rank, hence system is not observable and IEKF will not converge.")
 
     def IEKF(self):
-        """Implementation of the Iterative Extended Kalman Filter"""
+        """Implementation of the Iterative Extended Kalman Filter : P1.4"""
         x_k1_k1 = self.E_x_0
         P_k1_k1 = self.P_0_0
 
@@ -163,7 +163,6 @@ class KalmanFilter:
                     # 5. recalculate Hx
                     Hx = self.Hx(0, eta1, self.Uk[k])
                     z_k1_k = self.h(0, eta1, self.Uk[k])
-                    # std_z = np.sqrt(np.diag(Pz))
 
                     # 6. calculate Kk1
                     K_k1 = P_k1_k @ Hx.T @ np.linalg.inv(Hx @ P_k1_k @ Hx.T + self.R)
@@ -184,21 +183,34 @@ class KalmanFilter:
                 self.Z_pred[:, k] = z_k1_k
                 pbar.update(1)
 
+        # save Cm measurement and predicted outputs to file
         np.savetxt('data/output.csv', np.hstack([self.Cm.reshape(-1, 1), self.Z_pred.T]), delimiter=',')
         print("State estimation complete. The final value of C_alpha_up is: ", self.Xk1k1[3, -1])
 
     def alpha_reconstruction(self):
-        """Reconstruction of alpha_true using the estimated C_alpha_up state."""
+        """Reconstruction of alpha_true using the estimated C_alpha_up state : P1.5"""
         alpha_recon = self.Z_pred[0, :].copy()
         alpha_recon /= (1 + self.Xk1k1[3, :])
         return alpha_recon
 
 
     def plot(self, show=False):
+        """Plot the results of the IEKF."""
         T = np.linspace(0, 100, 10001)
+
+        plt.figure(figsize=(7, 3))
+        plt.plot(self.Xk1k1[3, :], lw=1)
+        plt.grid()
+        plt.xlabel('Iteration [-]')
+        plt.ylabel(r'$C_{\alpha_{up}}$ [-]')
+        plt.title(r'Estimated $C_{\alpha_{up}}$ state')
+        plt.tight_layout()
+        plt.savefig('plots/Caup.png', dpi=300)
+        if show: plt.show()
 
         labels = [r'$\alpha$ [rad]', r'$\beta$ [rad]', r'$V$ [m/s]']
         fig, ax = plt.subplots(3,1, figsize=(7, 8))
+        ax[0].set_title('IEKF output estimation')
         for i in range(3):
             ax[i].plot(T, self.Zk[:, i], label='Measurement', lw=1.5)
             ax[i].plot(T, self.Z_pred[i, :], label='Predicted', lw=1.3, c='r')
@@ -206,20 +218,10 @@ class KalmanFilter:
             ax[i].grid()
             ax[i].set_xlabel('Time [s]')
             ax[i].set_ylabel(fr'{labels[i]}')
+        ax[0].plot(T, self.alpha_reconstruction(), label=r'$\alpha_{true}$ Reconstruction', lw=1.3, c='g')
+        ax[0].legend()
         plt.tight_layout()
         plt.savefig('plots/IEKF.png', dpi=300)
-        if show: plt.show()
-
-        plt.figure(figsize=(7, 3))
-        plt.plot(T, self.Zk[:, 0], label='Measurement', lw=1.5)
-        plt.plot(T, self.Z_pred[0, :], label='Predicted', lw=1.3, c='r')
-        plt.plot(T, self.alpha_reconstruction(), label=r'$\alpha_{true}$ Reconstruction', lw=1.3, c='g')
-        plt.grid()
-        plt.legend()
-        plt.xlabel('Time [s]')
-        plt.ylabel(r'$\alpha$ [rad]')
-        plt.tight_layout()
-        plt.savefig('plots/a_reconstruct.png', dpi=300)
         if show: plt.show()
 
         plt.figure(figsize=(8, 6))
@@ -230,15 +232,15 @@ class KalmanFilter:
         plt.grid()
         plt.xlabel(r'$\alpha$ [rad]')
         plt.ylabel(r'$\beta$ [rad]')
+        plt.title(r'F16 $C_m(\alpha, \beta)$')
         plt.tight_layout()
         plt.savefig('plots/a_b.png', dpi=300)
         if show: plt.show()
 
-        plt.figure(figsize=(7, 3))
-        plt.plot(self.Xk1k1[3, :], lw=1)
-        plt.grid()
-        plt.xlabel('Iteration [-]')
-        plt.ylabel(r'$C_{\alpha_{up}}$ (estimated) [-]')
-        plt.tight_layout()
-        plt.savefig('plots/Caup.png', dpi=300)
-        if show: plt.show()
+
+# if __name__ == '__main__':
+#     from read_data import train_data
+#     data = train_data()
+#     KF = KalmanFilter(dt=0.01, data=data, n_states=4)  # initialize object
+#     KF.IEKF()  # perform Iterative Extended Kalman Filter
+#     KF.plot(show=True)  # plot results

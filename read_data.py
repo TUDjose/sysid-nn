@@ -28,10 +28,12 @@ def treat_data(data):
 
 def plot_Cm_glitch(Cm):
     import matplotlib.pyplot as plt
-    plt.scatter(np.arange(len(Cm)), Cm, s=0.4)
+    colours = ['b' if x < 0.2 else 'r' for x in Cm]
+    plt.scatter(np.arange(len(Cm)), Cm, s=0.4, c=colours)
     plt.xlabel('Sample')
     plt.ylabel(r'$C_m$ [-]')
     plt.grid()
+    plt.title('F16 $C_m$ Glitch')
     plt.tight_layout()
     plt.savefig('plots/Cm_glitch.png')
     plt.show()

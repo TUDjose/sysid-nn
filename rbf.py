@@ -7,7 +7,6 @@ from read_data import treat_data
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
 from scipy.spatial import Delaunay
-
 torch.random.manual_seed(1)
 
 
@@ -159,15 +158,6 @@ def train_lm(X, Y, num_epochs, mu, hidden_dim):
     model.eval()
     with torch.no_grad():
         predictions = model(test_data_tensor)
-
-    # plt.plot(test_data[:, 0], test_data[:, 1])
-    # C, L = model.layer1.centers, model.layer1.labels
-    # print(C.shape)
-    # Call = model.layer1.reformat_centers(test_data_tensor, C).detach().numpy()
-    # print(Call.shape)
-    # plt.scatter(C[:, 0], C[:, 1], c='r')
-    # plt.scatter(test_data[:, 0]-Call[:, 0], test_data[:, 1]-Call[:, 1])
-    # plt.show()
 
     return predictions, losses, test_data
 

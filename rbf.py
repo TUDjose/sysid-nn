@@ -68,14 +68,16 @@ class RBFNet:
     :param X: input data
     :param Y: output data
     :param hidden_dim: number of hidden neurons
-    :param a: RBF amplitude"""
+    :param a: RBF amplitude
+    :param save: whether to save the trained model or not"""
 
-    def __init__(self, X, Y, hidden_dim, a):
+    def __init__(self, X, Y, hidden_dim, a, save=True):
         self.init_data(X, Y)
         self.hidden_dim = hidden_dim
         self.centers = self.get_centers(self.X_train_tensor, plot=False)  # calculate the RBF centers
         self.a = a
         self.model = Net(3, hidden_dim, 1, self.centers, self.a)  # initialize the RBF network
+        self.save = save
 
     def init_data(self, x, y):
         # split dataset into training and validation sets (50/50)
@@ -135,7 +137,8 @@ class RBFNet:
                            nn.MSELoss()(self.predictions[1], self.y_val_tensor),
                            nn.MSELoss()(self.predictions[2], self.y_test_tensor)]
 
-        pickle.dump(self, open('data/rbf_lr_model.pkl', 'wb'))  # save the trained model for later use
+        if self.save:
+            pickle.dump(self, open('data/rbf_lr_model.pkl', 'wb'))  # save the trained model for later use
 
     def plot_lin_reg(self):
         """Plot the predicted outputs of the RBF network on the different datasets"""
@@ -171,7 +174,7 @@ class RBFNet:
         n = 600
         with tqdm(desc='RBF amplitude', total=n) as pbar:
             for a in np.linspace(0.05, 3., n):  # iterate over different amplitudes
-                rbf = RBFNet(x, y, 20, a)  # initialize the RBF network
+                rbf = RBFNet(x, y, 20, a, save=False)  # initialize the RBF network
                 rbf.train_lin_reg()  # train the network
                 L.append(rbf.losses[0])
                 pbar.update(1)

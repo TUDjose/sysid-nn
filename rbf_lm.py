@@ -245,7 +245,8 @@ class RBFNet:
 
             except torch._C._LinAlgError as e:  # if the Jacobian matrix ends up being singular, restart the training automatically
                 print(f'LinAlgError: {e}')
-                self.train_lm()
+                RBFNet(self.X, self.Y, self.hidden_dim, 500, 0.01, self.goal, retry=True, filename=self.filename,
+                       input_dim=self.input_dim).train_lm()
                 break
 
             except KeyboardInterrupt:
@@ -255,9 +256,8 @@ class RBFNet:
         # if the goal is not reached and retry is enabled, restart the training automatically
         if self.losses[-1]['train_RSS'] > self.goal and self.retry:
             print(f'Failed to converge,  loss={self.losses[-1]["train_RSS"]:.6f}, trying again ...')
-            rbf = RBFNet(self.X, self.Y, self.hidden_dim, 500, 0.01, self.goal, retry=True, filename=self.filename,
-                         input_dim=self.input_dim)
-            rbf.train_lm()
+            RBFNet(self.X, self.Y, self.hidden_dim, 500, 0.01, self.goal, retry=True, filename=self.filename,
+                         input_dim=self.input_dim).train_lm()
         else:
             # if the goal is reached, evaluate the network on the validation data
             self.model.eval()
@@ -391,7 +391,7 @@ class RBFNet:
                     row = [float(r) for r in row]
                     L.append(row)
             net = pickle.load(open('data/rbf_lm_testing.pkl', 'rb'))
-            L.append(net.losses[-1]['train_RSS'])
+            L.append([net.losses[i]['train_RSS'] for i in range(len(net.losses))])
             plt.figure(figsize=(10, 6))
             for i, mu in enumerate(mus):
                 plt.semilogy(L[i], label=rf'$\mu={mu}$')
@@ -409,14 +409,14 @@ class RBFNet:
     def optimize_structure(x, y, plot=False):
         """Calculate and plot the influence of the hidden dimension on the accuracy of the network. The hidden dimension is varied and the
         final loss values are plotted to show the effect of the network structure on the convergence of the network."""
-        hds = np.arange(1, 51)  # different hidden dimensions to test
+        hds = np.arange(2, 51, 2)  # different hidden dimensions to test
         L = []
         if not plot:
             for hd in hds:  # iterate over the different hidden dimensions
                 print(hd)
-                rbf = RBFNet(x, y, hd, 500, 0.01, 0.15, save=True, input_dim=3, filename=f'data/test/rbfLM_{hd}.pkl')
+                rbf = RBFNet(x, y, hd, 500, 0.01, 0.15, save=True, retry=False, input_dim=2, filename=f'data/test/rbfLM_{hd}.pkl')
                 rbf.train_lm()  # train the network with the (dynamic μ) LMA
-                L.append((rbf.losses[-1]['train_RSS'], rbf.losses[-1]['val_RSS']))
+                L.append((rbf.losses[-1]['train_MSE'], rbf.losses[-1]['val_MSE'], rbf.losses[-1]['special_MSE']))
 
             # store to file for later use
             L = np.array([np.array(loss) for loss in L], dtype=object)
@@ -433,10 +433,11 @@ class RBFNet:
 
             L = np.array(L)
             plt.figure(figsize=(10, 6))
-            plt.semilogy(hds, L[:, 0], label='Validation data')
-            plt.semilogy(hds, L[:, 1], label='Special validation data')
+            plt.semilogy(hds, L[:, 0], label='Training data')
+            plt.semilogy(hds, L[:, 1], label='Validation data')
+            plt.semilogy(hds, L[:, 2], label='Special validation data')
             plt.xlabel('Epoch')
-            plt.ylabel('RSS')
+            plt.ylabel('MSE')
             plt.title('Influence of hidden dimension on convergence (LMA)')
             plt.legend()
             plt.grid()
@@ -444,24 +445,90 @@ class RBFNet:
             plt.savefig('plots/rbf_lm_hd_influence.png', dpi=300)
             plt.show()
 
+    @staticmethod
+    def check_init_conditions(x, y, plot=False):
+        """Check the influence of different initial conditions on the convergence of the FNN. The same network is trained 10 times and
+        the different results are plotted to show the differences between them."""
+        l = []
+        if not plot:
+            for i in range(10):  # train the network 10 times with different initial conditions
+                print(i)
+                rbf = RBFNet(x, y, 30, 500, 0.01, 0.15, save=False, retry=False)
+                rbf.train_lm()
+                l.append([rbf.losses[i]['val_RSS'] for i in range(len(rbf.losses))])
+            l = np.array([np.array(loss) for loss in l], dtype=object)
+
+            with open(f'data/rbf_lm_init_cond.csv', 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerows(l)
+
+        else:
+            # read data from file and plot the losses
+            with open(f'data/rbf_lm_init_cond.csv', 'r') as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    row = [float(r) for r in row]
+                    l.append(row)
+
+            for i, loss in enumerate(l):
+                plt.semilogy(loss)
+            plt.xlabel('Epoch')
+            plt.ylabel('MSE')
+            plt.title(f'RBF MSEs for different initializations (LMA)')
+            plt.grid()
+            plt.tight_layout()
+            plt.savefig(f'plots/rbf_lm_init_cond.png', dpi=300)
+            plt.show()
+
+    @staticmethod
+    def plot_special():
+        net = pickle.load(open('data/test/rbfLM_44.pkl', 'rb'))    # load the RBF network object
+        x2 = net.X_spec_tensor.detach().numpy()     # get the special validation input data
+        y2 = net.y_spec_tensor.detach().numpy()     # get the special validation measurements
+        p2 = net.outputs['special'].detach().numpy()    # get the special validation network predictions
+
+        rms = np.sqrt(np.mean((y2 - p2) ** 2))  # calculate the residual RMS
+        print(f"The residual RMS of the RBF model of hidden dimension {net.hidden_dim} is: {rms:.4f}")
+
+        # plot the RBF predictions on the special validation data
+        tri2 = Delaunay(x2[:, :2])
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.view_init(elev=33, azim=70)
+        ax.scatter(x2[:, 0], x2[:, 1], y2.reshape(-1), c='k', s=0.3, label='Measurements')
+        ax.plot_trisurf(x2[:, 0], x2[:, 1], p2.reshape(-1), triangles=tri2.simplices, cmap='coolwarm', label='FNN')
+        ax.set_zlim(-0.12, 0)
+        ax.set_title(rf'$C_m(\alpha, \beta)$ - RBF on special validation data (LMA)', y=0.98)
+        ax.set_xlabel(r'$\alpha$')
+        ax.set_ylabel(r'$\beta$')
+        ax.set_zlabel(r'$C_m$')
+        ax.legend(loc='upper right', bbox_to_anchor=(1.03, 0.90))
+        plt.tight_layout()
+        plt.savefig(f'plots/rbf_lm_spec_val.png', dpi=300)
+        plt.show()
+
 
 if __name__ == '__main__':
     ols_data = np.loadtxt('data/output.csv', delimiter=',')  # load full reconstructed data
-    Y, X = ols_data[:, 0], ols_data[:, 1:]
+    Y, X = ols_data[:, 0], ols_data[:, 1:3]
     Y, X = treat_data((Y, X))
 
     # rbf = RBFNet(X, Y, 30, 500, 0.01, 0.3, retry=True, filename='data/rbf_lm_testing.pkl', input_dim=3)
     # rbf.train_lm()
 
-    net = pickle.load(open('data/rbf_lm_testing.pkl', 'rb'))
-    plt.semilogy([net.losses[i]['train_RSS'] for i in range(len(net.losses))])
-    plt.show()
-    plt.semilogy(net.mus)
-    plt.show()
-    RBFNet.plot_lm('', net)
+    # net = pickle.load(open('data/rbf_lm_testing.pkl', 'rb'))
+    # plt.semilogy([net.losses[i]['train_RSS'] for i in range(len(net.losses))])
+    # plt.show()
+    # plt.semilogy(net.mus)
+    # plt.show()
+    # RBFNet.plot_lm('', net)
 
     # RBFNet.damping_effect(X, Y)
     # RBFNet.damping_effect(X, Y, plot=True)
 
-    # RBFNet.optimize_structure(X, Y)
-    # RBFNet.optimize_structure(X, Y, plot=True)
+    RBFNet.optimize_structure(X, Y)
+    RBFNet.optimize_structure(X, Y, plot=True)
+
+    # RBFNet.check_init_conditions(X, Y)
+    # RBFNet.check_init_conditions(X, Y, plot=True)
+

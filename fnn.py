@@ -158,8 +158,6 @@ class FNN:
                     elif self.losses[-1]['train'] <= 2e-5:
                         optimizer.param_groups[0]['lr'] = 0.0001
 
-                print(loss['train'].item())
-
         except KeyboardInterrupt:
             pass
 

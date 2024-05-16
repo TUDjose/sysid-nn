@@ -158,6 +158,8 @@ class FNN:
                     elif self.losses[-1]['train'] <= 2e-5:
                         optimizer.param_groups[0]['lr'] = 0.0001
 
+                print(loss['train'].item())
+
         except KeyboardInterrupt:
             pass
 
@@ -307,13 +309,13 @@ class FNN:
         plt.show()
 
     @staticmethod
-    def compare_lm_adam(f1, f2):
+    def compare_lm_adam():
         """Compare the MSE convergence of the FNN trained with Adam and the FNN trained with the Levenberg-Marquardt algorithm."""
-        lm = pickle.load(open(f1, 'rb'))    # load the FNN trained with LM
-        adam = pickle.load(open(f2, 'rb'))  # load the FNN trained with Adam
+        lm = pickle.load(open('data/fnn_LM_30.pkl', 'rb'))    # load the FNN trained with LM
+        adam = pickle.load(open('data/test/adam_30', 'rb'))  # load the FNN trained with Adam
         # plot validation loss curves for both models
         plt.loglog([lm.losses[i]['val'].item() for i in range(len(lm.losses))], label='LMA')
-        plt.loglog([adam.losses[i]['val'].item() for i in range(len(adam.losses))], label='Adam')
+        plt.loglog(adam.losses, label='Adam')
         plt.xlabel('Epoch')
         plt.ylabel('MSE')
         plt.title('FNN MSEs for different optimization algorithms')
@@ -444,11 +446,12 @@ class FNN:
             plt.show()
 
     @staticmethod
-    def plot_special(net):
+    def plot_special():
         """Plot the FNN predictions on the special validation data and the actual measurements and show the residual RMS."""
+        net = pickle.load(open('data/test/adam_12', 'rb'))  # load the 'best' FNN model
         x2 = net.X_spec_tensor.detach().numpy()
         y2 = net.y_spec_tensor.detach().numpy()
-        p2 = net.outputs['special'].detach().numpy()
+        p2 = net.special_val.detach().numpy()
 
         rms = np.sqrt(np.mean((y2 - p2) ** 2))  # calculate the residual RMS
         print(f"The residual RMS of the FNN model of hidden dimension {net.hidden_dim} is: {rms:.4f}")
@@ -473,9 +476,9 @@ class FNN:
 
 
 if __name__ == '__main__':
-    ols_data = np.loadtxt('data/output.csv', delimiter=',')  # load full reconstructed data
-    Y, X = ols_data[:, 0], ols_data[:, 1:]
-    Y, X = treat_data((Y, X))
+    # ols_data = np.loadtxt('data/output.csv', delimiter=',')  # load full reconstructed data
+    # Y, X = ols_data[:, 0], ols_data[:, 1:3]
+    # Y, X = treat_data((Y, X))
 
     # fnn = FNN(X, Y, 30, 1000, 0.01, 0.18, optimizer='LM', retry=True, filename='data/fnn_LM_testing.pkl', input_dim=3)
     # fnn.train_lm()
@@ -484,7 +487,7 @@ if __name__ == '__main__':
     # FNN.check_init_conditions(X, Y, 'LM', plot=False)
     # FNN.check_init_conditions(X, Y, 'LM', plot=True)
 
-    # fnn2 = FNN(X, Y, 30, ..., 0.1, 1.5e-5, optimizer='adam', input_dim=3)
+    # fnn2 = FNN(X, Y, 12, ..., 0.1, 1.5e-5, optimizer='adam', input_dim=2)
     # fnn2.train_adam()
     # fnn2.plot_fnn('', fnn2)
 
@@ -498,6 +501,7 @@ if __name__ == '__main__':
 
     # FNN.hd_influence(X, Y, plot=True)
 
-
+    net = pickle.load(open('data/test/adam_30', 'rb'))
+    print(net.__dict__.keys())
 
 

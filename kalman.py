@@ -9,14 +9,13 @@ plt.rcParams['text.usetex'] = True
 class KalmanFilter:
     """
     This class contains all the necessary methods to perform an Iterative Extended Kalman Filter (IEKF) on the provided measurement data.
-        :param dt: time step
         :param data: tuple containing the data (Cm, Zk, Uk)
         :param n_states: number of states in system
     """
 
-    def __init__(self, dt, data, n_states):
+    def __init__(self, data, n_states):
         self.Cm, self.Zk, self.Uk = data
-        self.dt = dt
+        self.dt = 0.01  # fixed time step, as per assignment details
         self.N = len(self.Uk)
 
         self.states = n_states
@@ -41,9 +40,9 @@ class KalmanFilter:
         self.R = np.diagflat(np.power(self.sigma_v, 2))
 
         self.G = np.eye(self.states)        # system noise matrix
-        self.Xk1k1 = np.zeros([self.states, self.N])
-        self.Pk1k1 = np.zeros([self.states, self.states, self.N])
-        self.Z_pred = np.zeros([self.meas, self.N])     # predicted measurement
+        self.Xk1k1 = np.zeros([self.states, self.N])    # store state estimates
+        self.Pk1k1 = np.zeros([self.states, self.states, self.N])   # store state estimation error covariance
+        self.Z_pred = np.zeros([self.meas, self.N])     # store predicted measurement
 
 
     @staticmethod
@@ -94,8 +93,7 @@ class KalmanFilter:
 
     def prove_convergence(self):
         """prove convergence of the kalman filtering. This is done by calculating the observability matrix and checking that its rank is
-        equal to the number of states : P1.4"""
-        # check observability
+        equal to the number of states using a symbolic solver: P1.4"""
         u = sympy.symbols('u')
         v = sympy.symbols('v')
         w = sympy.symbols('w')
@@ -126,8 +124,8 @@ class KalmanFilter:
 
     def IEKF(self):
         """Implementation of the Iterative Extended Kalman Filter : P1.4"""
-        x_k1_k1 = self.E_x_0
-        P_k1_k1 = self.P_0_0
+        x_k1_k1 = self.E_x_0    # set initial state estimate
+        P_k1_k1 = self.P_0_0    # set initial state estimate covariance
 
         tk = 0
         tk1 = self.dt
@@ -139,13 +137,13 @@ class KalmanFilter:
                 # 2. calculate Fx
                 Fx = self.Fx(0, x_k1_k, self.Uk[k])
 
-                # 3. discretize system for phi and gamma matrices
+                # 3. discretize system to find phi and gamma matrices
                 ssB = cm.ss(Fx, self.G, np.eye(4), 0)
                 Phi = cm.c2d(ssB, self.dt).A
                 Gamma = cm.c2d(ssB, self.dt).B
 
-                # 4. calculate P_k1_k
-                P_k1_k =  Phi @ P_k1_k1 @ Phi.T + Gamma @ self.Q @ Gamma.T
+                # 4. calculate state prediction error covariance matrix P_k1_k
+                P_k1_k = Phi @ P_k1_k1 @ Phi.T + Gamma @ self.Q @ Gamma.T
 
                 # IEKF loop
                 eta_i = x_k1_k
@@ -160,21 +158,21 @@ class KalmanFilter:
                     iter += 1
                     eta1 = eta_i
 
-                    # 5. recalculate Hx
+                    # 5. recalculate Jacobian of measurement equation Hx
                     Hx = self.Hx(0, eta1, self.Uk[k])
                     z_k1_k = self.h(0, eta1, self.Uk[k])
 
-                    # 6. calculate Kk1
+                    # 6. Kalman gain (K_k1) recalculation
                     K_k1 = P_k1_k @ Hx.T @ np.linalg.inv(Hx @ P_k1_k @ Hx.T + self.R)
 
-                    # 7. update x_k1_k1
+                    # 7. update measurement and state estimates x_k1_k1
                     eta_i = x_k1_k + K_k1 @ (self.Zk[k] - z_k1_k - Hx @ (x_k1_k - eta1))
                     eta_i = np.ravel(eta_i)
                     err = np.linalg.norm(eta_i - eta1) / np.linalg.norm(eta1)
 
                 x_k1_k1 = eta_i
 
-                # 8. update P_k1_k1
+                # 8. update state estimation error covariance matrix P_k1_k1
                 P_k1_k1 = (np.eye(self.states) - K_k1 @ Hx) @ P_k1_k @ (np.eye(self.states) - K_k1 @ Hx).T + K_k1 @ self.R @ K_k1.T
 
                 # store results
@@ -189,6 +187,7 @@ class KalmanFilter:
 
     def alpha_reconstruction(self):
         """Reconstruction of alpha_true using the estimated C_alpha_up state : P1.5"""
+        # α_true = α_meas / (1 + C_α_up)
         alpha_recon = self.Z_pred[0, :].copy()
         alpha_recon /= (1 + self.Xk1k1[3, :])
         return alpha_recon
@@ -206,7 +205,8 @@ class KalmanFilter:
         plt.title(r'Estimated $C_{\alpha_{up}}$ state')
         plt.tight_layout()
         plt.savefig('plots/Caup.png', dpi=300)
-        if show: plt.show()
+        if show:
+            plt.show()
 
         labels = [r'$\alpha$ [rad]', r'$\beta$ [rad]', r'$V$ [m/s]']
         fig, ax = plt.subplots(3,1, figsize=(7, 8))
@@ -222,7 +222,8 @@ class KalmanFilter:
         ax[0].legend()
         plt.tight_layout()
         plt.savefig('plots/IEKF.png', dpi=300)
-        if show: plt.show()
+        if show:
+            plt.show()
 
         plt.figure(figsize=(8, 6))
         plt.plot(self.Zk[:, 0], self.Zk[:, 1], label='Measured', lw=0.8)
@@ -235,12 +236,5 @@ class KalmanFilter:
         plt.title(r'F16 $C_m(\alpha, \beta)$')
         plt.tight_layout()
         plt.savefig('plots/a_b.png', dpi=300)
-        if show: plt.show()
-
-
-# if __name__ == '__main__':
-#     from read_data import train_data
-#     data = train_data()
-#     KF = KalmanFilter(dt=0.01, data=data, n_states=4)  # initialize object
-#     KF.IEKF()  # perform Iterative Extended Kalman Filter
-#     KF.plot(show=True)  # plot results
+        if show:
+            plt.show()

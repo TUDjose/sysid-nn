@@ -432,10 +432,12 @@ class RBFNet:
                     L.append(row)
 
             L = np.array(L)
+            pt = np.argmin(np.sum(L, axis=1))
             plt.figure(figsize=(10, 6))
             plt.semilogy(hds, L[:, 0], label='Training data')
             plt.semilogy(hds, L[:, 1], label='Validation data')
             plt.semilogy(hds, L[:, 2], label='Special validation data')
+            plt.vlines(2*pt, 0, 0.2, colors='r', linestyles='dashed', label='Best structure')
             plt.xlabel('Epoch')
             plt.ylabel('MSE')
             plt.title('Influence of hidden dimension on convergence (LMA)')
@@ -481,8 +483,15 @@ class RBFNet:
             plt.show()
 
     @staticmethod
-    def plot_special():
-        net = pickle.load(open('data/test/rbfLM_44.pkl', 'rb'))    # load the RBF network object
+    def plot_special(number=42):
+        net = pickle.load(open(f'data/test/rbfLM_{number}.pkl', 'rb'))    # load the RBF network object
+
+        dy = net.y_test_tensor.detach().numpy()    # get the measurement data
+        dp = net.outputs['test'].detach().numpy()  # get the network predictions
+        rms = np.sqrt(np.mean((dy - dp) ** 2))  # calculate the residual RMS
+        print(number, rms)
+
+
         x2 = net.X_spec_tensor.detach().numpy()     # get the special validation input data
         y2 = net.y_spec_tensor.detach().numpy()     # get the special validation measurements
         p2 = net.outputs['special'].detach().numpy()    # get the special validation network predictions
@@ -506,29 +515,3 @@ class RBFNet:
         plt.tight_layout()
         plt.savefig(f'plots/rbf_lm_spec_val.png', dpi=300)
         plt.show()
-
-
-if __name__ == '__main__':
-    ols_data = np.loadtxt('data/output.csv', delimiter=',')  # load full reconstructed data
-    Y, X = ols_data[:, 0], ols_data[:, 1:3]
-    Y, X = treat_data((Y, X))
-
-    # rbf = RBFNet(X, Y, 30, 500, 0.01, 0.3, retry=True, filename='data/rbf_lm_testing.pkl', input_dim=3)
-    # rbf.train_lm()
-
-    # net = pickle.load(open('data/rbf_lm_testing.pkl', 'rb'))
-    # plt.semilogy([net.losses[i]['train_RSS'] for i in range(len(net.losses))])
-    # plt.show()
-    # plt.semilogy(net.mus)
-    # plt.show()
-    # RBFNet.plot_lm('', net)
-
-    # RBFNet.damping_effect(X, Y)
-    # RBFNet.damping_effect(X, Y, plot=True)
-
-    RBFNet.optimize_structure(X, Y)
-    RBFNet.optimize_structure(X, Y, plot=True)
-
-    # RBFNet.check_init_conditions(X, Y)
-    # RBFNet.check_init_conditions(X, Y, plot=True)
-

@@ -70,8 +70,8 @@ class LeastSquares:
         ax.set_ylabel(r'$\beta$ [rad]')
         ax.set_zlabel(r'$C_m$ [-]')
         ax.set_zlim(lims)
-        ax.legend()
-        ax.set_title(title)
+        ax.legend(loc='upper right', bbox_to_anchor=(1.03, 0.90))
+        ax.set_title(title, y=0.98)
         plt.tight_layout()
         if save_file != '':
             plt.savefig(f'plots/{save_file}.png', dpi=300)
@@ -86,17 +86,29 @@ class LeastSquares:
         covariance matrix: P1.8"""
         epsilon = (self.Yval - y_hat_val).reshape(-1, 1)    # calculate residuals
         A, _ = self.regression_matrix(self.Xval)    # Get the regression matrix for the validation data
-        theta_hat_cov = np.linalg.pinv(A) @ epsilon @ epsilon.T @ np.linalg.pinv(A).T   # OLS parameters covariance matrix
-        variance = np.diag(theta_hat_cov)   # Extract the variance of the parameters from the covariance matrix
+        n = len(epsilon)  # Number of data points
+        k = A.shape[1]  # Number of parameters
+        theta_hat_cov = np.linalg.pinv(A) @ epsilon @ epsilon.T @ np.linalg.pinv(A).T / (n - k)   # OLS parameters covariance matrix
 
-        plt.plot(variance, marker='o')
-        plt.xlabel('Parameter Index')
-        plt.ylabel(r'Var($\hat{\theta}$)')
-        plt.title('OLS parameter variance')
-        plt.grid()
+        idxs = np.arange(min(theta_hat_cov.shape))
+        x = np.arange(theta_hat_cov.shape[1])
+        y = np.arange(theta_hat_cov.shape[0])
+        x, y = np.meshgrid(x, y)
+
+        fig = plt.figure(figsize=(7 , 6))
+        ax = fig.add_subplot(111, projection='3d')
+        ax.view_init(elev=20, azim=-105)
+        ax.plot_surface(x, y, theta_hat_cov, cmap='coolwarm', label='Covariance surface')
+        ax.scatter(idxs, idxs, np.diag(theta_hat_cov), c='k', s=30, label='Variance')
+        ax.set_xlabel(r'$\hat{\theta}_i$')
+        ax.set_ylabel(r'$\hat{\theta}_j$')
+        ax.set_zlabel(r'Cov($\hat{\theta}$)')
+        ax.set_title('OLS parameter covariance surface', y=0.95)
+        ax.legend(loc='upper right', bbox_to_anchor=(1.03, 0.90))
         plt.tight_layout()
         plt.savefig('plots/OLS_variance.png', dpi=300)
         plt.show()
+
 
     def residual_validation(self, y_hat):
         """Perform model-error-based validation of the OLS estimates by calculating the autocorrelation function of the residuals: P1.8"""
@@ -104,18 +116,21 @@ class LeastSquares:
         A, _ = self.regression_matrix(self.Xval)    # Get the regression matrix for the validation data
         ecorr = np.correlate(epsilon - np.mean(epsilon), epsilon - np.mean(epsilon), mode='full')   # Calculate the autocorrelation function
         ecorr /= np.max(ecorr)  # Normalize the autocorrelation function
+        ci = 1.96 / np.sqrt(len(epsilon))   # Calculate the 95% confidence interval
 
-        plt.plot(np.arange(-len(epsilon), len(epsilon) - 1), ecorr, marker='o', markersize=2)
+        plt.fill_between(np.arange(-len(epsilon), len(epsilon) - 1), -ci, ci, color='red', alpha=0.5, label=r'95\% CI')
+        plt.plot(np.arange(-len(epsilon), len(epsilon) - 1), ecorr, marker='o', markersize=1, label='Autocorrelation')
         plt.xlabel(r'$\tau$')
         plt.ylabel(r'Normalized $K_{\varepsilon\varepsilon}(\tau)$')
         plt.title('OLS Residual Correlation')
         plt.grid()
+        plt.legend()
         plt.tight_layout()
         plt.savefig('plots/OLS_residual_correlation.png', dpi=300)
         plt.show()
 
     def residual_RMS(self, y, yhat):
-        """Calculate the Root Mean Squared Error (RMSE) of the OLS regression on the special validation set: P1.9"""
+        """Calculate the Root Mean Squared (RMS) Error of the OLS regression on the special validation set: P1.9"""
         rms = np.sqrt(np.mean((y - yhat) ** 2))
         print(f"The residual RMS of the OLS model of polynomial order {self.order} is: {rms:.4f}")
 

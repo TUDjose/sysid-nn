@@ -470,36 +470,3 @@ class FNN:
         plt.tight_layout()
         plt.savefig(f'plots/{net.optimizer}_spec_val_comp.png', dpi=300)
         plt.show()
-
-
-
-if __name__ == '__main__':
-    # ols_data = np.loadtxt('data/output.csv', delimiter=',')  # load full reconstructed data
-    # Y, X = ols_data[:, 0], ols_data[:, 1:3]
-    # Y, X = treat_data((Y, X))
-
-    # fnn = FNN(X, Y, 30, 1000, 0.01, 0.18, optimizer='LM', retry=True, filename='data/fnn_LM_testing.pkl', input_dim=3)
-    # fnn.train_lm()
-    # fnn.plot_fnn('data/fnn_LM_testing.pkl')
-
-    # FNN.check_init_conditions(X, Y, 'LM', plot=False)
-    # FNN.check_init_conditions(X, Y, 'LM', plot=True)
-
-    # fnn2 = FNN(X, Y, 12, ..., 0.1, 1.5e-5, optimizer='adam', input_dim=2)
-    # fnn2.train_adam()
-    # fnn2.plot_fnn('', fnn2)
-
-    # FNN.check_init_conditions(X, Y, 'adam', plot=False)
-    # FNN.check_init_conditions(X, Y, 'adam', plot=True)
-
-    # FNN.compare_adam_lm('data/fnn_LM_30.pkl', 'data/fnn_adam_30.pkl')
-
-    # FNN.lr_influence(X, Y, plot=False)
-    # FNN.lr_influence(X, Y, plot=True)
-
-    # FNN.hd_influence(X, Y, plot=True)
-
-    net = pickle.load(open('data/test/adam_30', 'rb'))
-    print(net.__dict__.keys())
-
-

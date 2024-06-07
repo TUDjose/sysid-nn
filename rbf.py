@@ -121,7 +121,7 @@ class RBFNet:
     def train_lin_reg(self):
         """Train the RBF network using linear regression to solve for the output weights"""
         params = list(self.model.parameters())
-        # only update the output weights, not the weights of the RBF layer
+        # only update the output weights with an OLS estimation, not the weights of the RBF layer
         updates = [params[0],
                    torch.linalg.pinv(self.a * torch.exp(-self.model.layer1(self.X_train_tensor))) @ self.y_train_tensor]
         for idx, p in enumerate(self.model.parameters()):
